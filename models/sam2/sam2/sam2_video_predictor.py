@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
+import torch.nn.functional as F
 from numpy.matlib import empty
 from tqdm import tqdm
 
@@ -77,7 +78,7 @@ class SAM2VideoPredictor(SAM2Base):
     ):
         """支持 RealSense 相机图像，直接从 NumPy 图像帧初始化推理状态。"""
         assert isinstance(numpy_frames, list) and isinstance(numpy_frames[0], np.ndarray), \
-            "输入必须是 numpy 图像帧列表"
+            "The input must be a list of numpy image frames"
 
         compute_device = self.device
         image_size = self.image_size
@@ -191,6 +192,89 @@ class SAM2VideoPredictor(SAM2Base):
         # 更新 consolidated_frame_inds 记录
         inference_state["consolidated_frame_inds"]["non_cond_frame_outputs"].discard(frame_idx)
         inference_state["consolidated_frame_inds"]["cond_frame_outputs"].add(frame_idx)
+
+    @torch.inference_mode()
+    def get_masks_for_bboxes(self, image: np.ndarray, bboxes: list[list[int]]):
+        """
+        为给定的图像和一系列边界框生成掩码，此过程独立于视频推理状态。
+
+        参数:
+          image (np.ndarray): 输入图像，BGR格式（例如由cv2.imread读取）。
+          bboxes (list[list[int]]): 边界框列表，每个边界框格式为 [x1, y1, x2, y2]。
+
+        返回:
+          np.ndarray: 与输入边界框对应的掩码批次，
+                      形状为 (num_boxes, H, W)，布尔类型。
+        """
+        original_height, original_width = image.shape[:2]
+
+        # 1. 预处理图像
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        img_tensor = torch.from_numpy(img_rgb).float().permute(2, 0, 1) / 255.0
+        img_tensor_resized = TF.resize(img_tensor, [self.image_size, self.image_size], antialias=True)
+        img_tensor_resized = img_tensor_resized.unsqueeze(0).to(self.device)
+
+        img_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32, device=self.device)[:, None, None]
+        img_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32, device=self.device)[:, None, None]
+        normalized_img = (img_tensor_resized - img_mean) / img_std
+
+        # 2. 获取图像特征
+        backbone_out = self.forward_image(normalized_img)
+        _, vision_feats, _, feat_sizes = self._prepare_backbone_features(backbone_out)
+
+        # 3. 准备边界框作为提示
+        num_boxes = len(bboxes)
+        box_torch = torch.tensor(bboxes, dtype=torch.float32, device=self.device)
+
+        # 归一化坐标
+        box_torch[:, [0, 2]] /= original_width
+        box_torch[:, [1, 3]] /= original_height
+        box_torch *= self.image_size
+
+        box_coords = box_torch.reshape(num_boxes, 2, 2)
+        box_labels = torch.tensor([2, 3], dtype=torch.int32, device=self.device).reshape(1, 2).repeat(num_boxes, 1)
+        point_inputs = {"point_coords": box_coords, "point_labels": box_labels}
+
+        # 4. 运行SAM头部
+        # 图像特征是针对单个图像的，因此需要为每个边界框重复这些特征。
+        backbone_features = vision_feats[-1].permute(1, 2, 0).view(1, self.hidden_dim, *feat_sizes[-1])
+        backbone_features = backbone_features.expand(num_boxes, -1, -1, -1)
+
+        high_res_features = None
+        if self.use_high_res_features_in_sam:
+            high_res_features = [
+                x.permute(1, 2, 0).view(1, x.shape[2], *s).expand(num_boxes, -1, -1, -1)
+                for x, s in zip(vision_feats[:-1], feat_sizes[:-1])
+            ]
+
+        (
+            _,
+            _,
+            _,
+            _,
+            high_res_masks,
+            _,
+            _,
+            _,
+            _
+        ) = self._forward_sam_heads(
+            backbone_features=backbone_features,
+            point_inputs=point_inputs,
+            mask_inputs=None,
+            high_res_features=high_res_features,
+            multimask_output=False,
+        )
+
+        # 5. 后处理掩码
+        final_masks = F.interpolate(
+            high_res_masks,
+            size=(original_height, original_width),
+            mode="bilinear",
+            align_corners=False,
+        )
+        final_masks = final_masks > 0.0  # 二值化掩码
+
+        return final_masks.squeeze(1).cpu().numpy()
 
     @torch.inference_mode()
     def init_state(
@@ -896,6 +980,7 @@ class SAM2VideoPredictor(SAM2Base):
             )
             yield frame_idx, obj_ids, video_res_masks
 
+    @torch.inference_mode()
     def propagate_in_frame(
             self,
             inference_state,
@@ -951,7 +1036,7 @@ class SAM2VideoPredictor(SAM2Base):
         _, video_res_masks = self._get_orig_video_res_output(
             inference_state, pred_masks
         )
-        yield start_frame_idx, obj_ids, video_res_masks
+        return start_frame_idx, obj_ids, video_res_masks
 
     def _add_output_per_object(
         self, inference_state, frame_idx, current_out, storage_key

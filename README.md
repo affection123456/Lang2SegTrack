@@ -97,10 +97,12 @@ Place them into `sam2/checkpoints/`:
 - **`predict_img`**: Predict objects in images by using text-prompts.
 
 
+
   ```bash
   python scripts/lang2segtrack_with_backward.py
   ```
 - **`track`**: Supports backward tracking after the forward tracking is completed, and finally returns the tracking data 'mask' of each tracked object in the entire video stream.
+
 
 
   ```bash

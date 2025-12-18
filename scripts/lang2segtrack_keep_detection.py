@@ -126,25 +126,25 @@ class Lang2SegTrack:
     def track_and_visualize(self, predictor, state, frame, writer):
         if (any(len(state["point_inputs_per_obj"][i]) > 0 for i in range(len(state["point_inputs_per_obj"]))) or
             any(len(state["mask_inputs_per_obj"][i]) > 0 for i in range(len(state["mask_inputs_per_obj"])))):
-            for frame_idx, obj_ids, masks in predictor.propagate_in_frame(state, state["num_frames"] - 1):
-                self.existing_obj_outputs = []
-                # self.prompts['prompts'] = []
-                for obj_id, mask in zip(obj_ids, masks):
-                    mask = mask[0].cpu().numpy() > 0.0
-                    mask = filter_mask_outliers(mask)
-                    nonzero = np.argwhere(mask)
-                    if nonzero.size == 0:
-                        bbox = [0, 0, 0, 0]
-                    else:
-                        y_min, x_min = nonzero.min(axis=0)
-                        y_max, x_max = nonzero.max(axis=0)
-                        bbox = [x_min, y_min, x_max - x_min, y_max - y_min]
-                    self.draw_mask_and_bbox(frame, mask, bbox, obj_id)
-                    # self.existing_masks.append(mask)
-                    self.existing_obj_outputs.append([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])
-                    # self.prompts['prompts'].append(mask)
-                    # self.all_forward_masks.setdefault(obj_id, []).append(mask)
-                self.prompts['prompts'] = self.existing_obj_outputs.copy()
+            frame_idx, obj_ids, masks = predictor.propagate_in_frame(state, state["num_frames"] - 1)
+            self.existing_obj_outputs = []
+            # self.prompts['prompts'] = []
+            for obj_id, mask in zip(obj_ids, masks):
+                mask = mask[0].cpu().numpy() > 0.0
+                mask = filter_mask_outliers(mask)
+                nonzero = np.argwhere(mask)
+                if nonzero.size == 0:
+                    bbox = [0, 0, 0, 0]
+                else:
+                    y_min, x_min = nonzero.min(axis=0)
+                    y_max, x_max = nonzero.max(axis=0)
+                    bbox = [x_min, y_min, x_max - x_min, y_max - y_min]
+                self.draw_mask_and_bbox(frame, mask, bbox, obj_id)
+                # self.existing_masks.append(mask)
+                self.existing_obj_outputs.append([bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]])
+                # self.prompts['prompts'].append(mask)
+                # self.all_forward_masks.setdefault(obj_id, []).append(mask)
+            self.prompts['prompts'] = self.existing_obj_outputs.copy()
 
         frame_dis = self.show_fps(frame)
         cv2.imshow("Video Tracking", frame_dis)
