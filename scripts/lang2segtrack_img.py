@@ -1,16 +1,12 @@
+from typing import Any
+
+
 import base64
 import os
-import sys
 import threading
 import queue
 import time
 from io import BytesIO
-
-# 将项目根目录加入 path，保证从任意位置运行都能找到 models、utils
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(_script_dir)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
 
 import cv2
 import torch
@@ -19,7 +15,7 @@ import numpy as np
 import imageio
 from PIL import Image
 from models.gdino.models.gdino import GDINO
-from models.gdino.utils import display_image_with_boxes
+from models.gdino.utils import display_image_with_boxes, save_image_with_boxes
 from models.sam2.sam import SAM
 from utils.color import COLOR
 import pyrealsense2 as rs
@@ -309,17 +305,18 @@ if __name__ == "__main__":
                             model_path="models/sam2/checkpoints/sam2.1_hiera_tiny.pt",
                             video_path="assets/05_default_juggle.mp4",
                             output_path="processed_video.mp4",
-                            mode="video",
+                            mode="img",
                             # first_prompts=[mask],
                             save_video=True,
-                            use_txt_prompt=False)
-    tracker.track()
+                            use_txt_prompt=True)
+    # tracker.track()
 
-    # out = tracker.predict_img(
-    #     [Image.open("assets/frame_00000.jpg")],
-    #     ["cup"],
-    # )
-    # print(out)
-    # img = cv2.imread("assets/frame_00000.jpg")
-    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    out = tracker.predict_img(
+        [Image.open("assets/frame_00000.jpg")],
+        ["cup"],
+    )
+    print(out)
+    img = cv2.imread("assets/frame_00000.jpg")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     # display_image_with_boxes(img, list(out[0]["boxes"]), out[0]["scores"], list(out[0]["labels"]))
+    save_image_with_boxes(img, list(out[0]["boxes"]), out[0]["scores"], list[Any](out[0]["labels"]), "output/boxes.png")

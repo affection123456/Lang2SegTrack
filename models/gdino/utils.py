@@ -96,6 +96,43 @@ def display_image_with_boxes(image, boxes, logits, phrases):
     plt.show()
 
 
+def save_image_with_boxes(image, boxes, logits, phrases, save_path, dpi=150):
+    """Draw image with bounding boxes and save to file (same layout as display_image_with_boxes)."""
+    fig, ax = plt.subplots()
+    ax.imshow(image)
+    ax.axis('off')
+
+    hex_colors = ['#209ce3', '#fecce6', '#ffe9a5', '#3dbc75']
+    color_map = {}
+    for box, logit, phrase in zip(boxes, logits, phrases):
+        x_min, y_min, x_max, y_max = box
+        confidence_score = round(logit, 2)
+        box_width = x_max - x_min
+        box_height = y_max - y_min
+
+        if phrase not in color_map:
+            available_colors = [color for color in hex_colors if color not in color_map.values()]
+            if not available_colors:
+                available_colors = hex_colors
+            color_map[phrase] = random.choice(available_colors)
+        color = color_map[phrase]
+
+        rect = plt.Rectangle(
+            (x_min, y_min), box_width, box_height,
+            fill=False, edgecolor=color, linewidth=2
+        )
+        ax.add_patch(rect)
+
+        ax.text(
+            x_min, y_min - 5, f"{phrase}: {confidence_score}",
+            fontsize=9, color=color, verticalalignment='top',
+            bbox=dict(facecolor='black', alpha=0.5, edgecolor='none')
+        )
+
+    plt.savefig(save_path, bbox_inches='tight', dpi=dpi)
+    plt.close(fig)
+
+
 def get_contours(mask):
     if len(mask.shape) > 2:
         mask = np.squeeze(mask, 0)
