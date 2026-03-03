@@ -133,6 +133,28 @@ def save_image_with_boxes(image, boxes, logits, phrases, save_path, dpi=150):
     plt.close(fig)
 
 
+def save_image_with_boxes_and_masks(image, boxes, scores, labels, masks, save_path, dpi=150):
+    """Draw image with bounding boxes and masks, then save to file."""
+    if masks is None or (hasattr(masks, "__len__") and len(masks) == 0):
+        save_image_with_boxes(image, boxes, scores, labels, save_path, dpi=dpi)
+        return
+    if isinstance(masks, np.ndarray):
+        if masks.ndim == 2:
+            masks = np.asarray(masks, dtype=bool)[np.newaxis, ...]
+        else:
+            masks = np.asarray(masks, dtype=bool)
+    else:
+        masks = np.array([np.asarray(m, dtype=bool) for m in masks])
+    annotated = draw_image(
+        np.asarray(image) if isinstance(image, Image.Image) else image,
+        masks,
+        np.asarray(boxes),
+        np.asarray(scores),
+        labels,
+    )
+    Image.fromarray(annotated).save(save_path)
+
+
 def get_contours(mask):
     if len(mask.shape) > 2:
         mask = np.squeeze(mask, 0)

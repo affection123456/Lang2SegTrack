@@ -1,12 +1,17 @@
-from typing import Any
-
-
 import base64
 import os
+import sys
 import threading
 import queue
 import time
 from io import BytesIO
+
+# 将项目根目录加入 path，保证从任意位置运行都能找到 models、utils
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_script_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 
 import cv2
 import torch
@@ -15,7 +20,7 @@ import numpy as np
 import imageio
 from PIL import Image
 from models.gdino.models.gdino import GDINO
-from models.gdino.utils import display_image_with_boxes, save_image_with_boxes
+from models.gdino.utils import display_image_with_boxes, save_image_with_boxes, save_image_with_boxes_and_masks
 from models.sam2.sam import SAM
 from utils.color import COLOR
 import pyrealsense2 as rs
@@ -311,12 +316,27 @@ if __name__ == "__main__":
                             use_txt_prompt=True)
     # tracker.track()
 
+    # pic_path = "assets/frame_00000.jpg"
+    pic_path = "output/metal_box1.png"
+    # 转为 RGB，避免 PNG 的 RGBA/调色板等导致 transformers 报 "Unable to infer channel dimension format"
+    image_pil = Image.open(pic_path).convert("RGB")
+
     out = tracker.predict_img(
-        [Image.open("assets/frame_00000.jpg")],
-        ["cup"],
+        [image_pil],
+        ["metal box"],
     )
     print(out)
-    img = cv2.imread("assets/frame_00000.jpg")
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # display_image_with_boxes(img, list(out[0]["boxes"]), out[0]["scores"], list(out[0]["labels"]))
-    save_image_with_boxes(img, list(out[0]["boxes"]), out[0]["scores"], list[Any](out[0]["labels"]), "output/boxes.png")
+    img = cv2.imread(pic_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # 只保存检测框
+    save_image_with_boxes(img_rgb, list(out[0]["boxes"]), out[0]["scores"], list(out[0]["labels"]), "output/boxes.png")
+    # 保存检测框 + mask 叠加
+    if out[0].get("masks") is not None and len(out[0]["masks"]) > 0:
+        save_image_with_boxes_and_masks(
+            img_rgb,
+            list(out[0]["boxes"]),
+            out[0]["scores"],
+            list(out[0]["labels"]),
+            out[0]["masks"],
+            "output/boxes_and_masks.png",
+        )
