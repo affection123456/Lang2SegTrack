@@ -321,10 +321,13 @@ if __name__ == "__main__":
     # 转为 RGB，避免 PNG 的 RGBA/调色板等导致 transformers 报 "Unable to infer channel dimension format"
     image_pil = Image.open(pic_path).convert("RGB")
 
+    t0 = time.time()
     out = tracker.predict_img(
         [image_pil],
         ["metal box"],
     )
+    elapsed = time.time() - t0
+    print(f"predict_img 耗时: {elapsed:.3f} s")
     print(out)
     img = cv2.imread(pic_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

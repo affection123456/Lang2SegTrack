@@ -1,3 +1,4 @@
+import os
 import random
 
 import cv2
@@ -138,13 +139,23 @@ def save_image_with_boxes_and_masks(image, boxes, scores, labels, masks, save_pa
     if masks is None or (hasattr(masks, "__len__") and len(masks) == 0):
         save_image_with_boxes(image, boxes, scores, labels, save_path, dpi=dpi)
         return
-    if isinstance(masks, np.ndarray):
-        if masks.ndim == 2:
-            masks = np.asarray(masks, dtype=bool)[np.newaxis, ...]
-        else:
-            masks = np.asarray(masks, dtype=bool)
-    else:
-        masks = np.array([np.asarray(m, dtype=bool) for m in masks])
+
+    def _normalize_masks(raw_masks):
+        """Normalize masks to [N, H, W] bool array."""
+        arr = np.asarray(raw_masks)
+        # Common SAM layout: [N, 1, H, W]
+        if arr.ndim == 4 and arr.shape[1] == 1:
+            arr = arr[:, 0, :, :]
+        elif arr.ndim == 2:
+            arr = arr[np.newaxis, ...]
+        elif arr.ndim != 3:
+            # Fallback for list-like masks with varying wrappers
+            arr = np.array([np.squeeze(np.asarray(m)) for m in raw_masks])
+            if arr.ndim == 2:
+                arr = arr[np.newaxis, ...]
+        return np.asarray(arr, dtype=bool)
+
+    masks = _normalize_masks(masks)
     annotated = draw_image(
         np.asarray(image) if isinstance(image, Image.Image) else image,
         masks,
@@ -152,7 +163,21 @@ def save_image_with_boxes_and_masks(image, boxes, scores, labels, masks, save_pa
         np.asarray(scores),
         labels,
     )
+    os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
     Image.fromarray(annotated).save(save_path)
+
+    # Save mono8 masks (strictly 0/255) alongside the overlay image.
+    save_dir = os.path.dirname(save_path) or "."
+    save_stem = os.path.splitext(os.path.basename(save_path))[0]
+
+    merged_mask = np.any(masks, axis=0).astype(np.uint8) * 255
+    Image.fromarray(merged_mask, mode="L").save(os.path.join(save_dir, f"{save_stem}_mask.png"))
+
+    for idx, mask in enumerate(masks):
+        mono_mask = mask.astype(np.uint8) * 255
+        Image.fromarray(mono_mask, mode="L").save(
+            os.path.join(save_dir, f"{save_stem}_mask_{idx}.png")
+        )
 
 
 def get_contours(mask):
